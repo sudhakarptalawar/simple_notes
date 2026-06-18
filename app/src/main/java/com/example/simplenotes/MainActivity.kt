@@ -64,7 +64,7 @@ fun NotesScreen() {
             onClick = {
                 if (noteText.isNotBlank()) {
                     notesList.add(noteText)
-                    noteText = "" // Clears input
+                    noteText = ""
                 }
             },
             modifier = Modifier.fillMaxWidth()
@@ -74,45 +74,71 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text(
-            text = "Saved Notes:",
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.align(Alignment.Start)
-        )
+        // Header Row with "Saved Notes" and the new "Clear All" Button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Saved Notes:",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            // Only show "Clear All" if there are actually notes in the list
+            if (notesList.isNotEmpty()) {
+                TextButton(onClick = { notesList.clear() }) {
+                    Text("Clear All", color = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Scrollable List to display all notes
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(notesList) { note ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                ) {
-                    Row(
+        // Dynamic State: Show placeholder text if empty, otherwise show scrollable list
+        if (notesList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "📝 No notes saved yet!",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            // Scrollable List to display all notes
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f)
+            ) {
+                items(notesList) { note ->
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(vertical = 4.dp)
                     ) {
-                        Text(
-                            text = note,
-                            modifier = Modifier.weight(1f)
-                        )
-
-                        // Beautiful trash icon button powered by your newly installed library!
-                        IconButton(
-                            onClick = { notesList.remove(note) }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Delete, // Make sure it says Icons.Filled.Delete here!
-                                contentDescription = "Delete Note",
-                                tint = MaterialTheme.colorScheme.error
+                            Text(
+                                text = note,
+                                modifier = Modifier.weight(1f)
                             )
+
+                            IconButton(onClick = { notesList.remove(note) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete Note",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
