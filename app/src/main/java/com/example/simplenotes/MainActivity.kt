@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,14 +44,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Storage helpers
-fun saveNotesToFile(context: Context, notes: List<String>) {
-    val file = File(context.filesDir, "saved_notes.txt")
+// Upgraded Storage helpers to support multiple files
+fun saveNotesToFile(context: Context, notes: List<String>, fileName: String) {
+    val file = File(context.filesDir, fileName)
     file.writeText(notes.joinToString("\n"))
 }
 
-fun loadNotesFromFile(context: Context): List<String> {
-    val file = File(context.filesDir, "saved_notes.txt")
+fun loadNotesFromFile(context: Context, fileName: String): List<String> {
+    val file = File(context.filesDir, fileName)
     return if (file.exists()) {
         val content = file.readText()
         if (content.isBlank()) emptyList() else content.split("\n")
@@ -64,15 +65,27 @@ fun NotesScreen() {
     val context = LocalContext.current
     var noteText by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
-
-    // State to track if we are currently editing a note
     var editingNoteData by remember { mutableStateOf<String?>(null) }
 
-    val notesList = remember { mutableStateListOf<String>().apply {
-        addAll(loadNotesFromFile(context))
+    // Vault State Variables
+    var isVaultOpen by remember { mutableStateOf(false) }
+    var showPasswordDialog by remember { mutableStateOf(false) }
+    var pinInput by remember { mutableStateOf("") }
+    val CORRECT_PIN = "1234"
+
+    // Two separate lists for public and hidden notes
+    val publicNotes = remember { mutableStateListOf<String>().apply {
+        addAll(loadNotesFromFile(context, "saved_notes.txt"))
+    } }
+    val hiddenNotes = remember { mutableStateListOf<String>().apply {
+        addAll(loadNotesFromFile(context, "hidden_notes.txt"))
     } }
 
-    val filteredNotes = notesList.filter {
+    // Dynamically point to the active list and file based on vault state
+    val activeNotesList = if (isVaultOpen) hiddenNotes else publicNotes
+    val activeFileName = if (isVaultOpen) "hidden_notes.txt" else "saved_notes.txt"
+
+    val filteredNotes = activeNotesList.filter {
         it.contains(searchQuery, ignoreCase = true)
     }
 
@@ -81,20 +94,77 @@ fun NotesScreen() {
         Color(0xFFFCE4EC), Color(0xFFF3E5F5), Color(0xFFFFF3E0)
     )
 
+    // Password Entry Pop-up
+    if (showPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showPasswordDialog = false
+                pinInput = ""
+            },
+            title = { Text("Enter Secret PIN") },
+            text = {
+                OutlinedTextField(
+                    value = pinInput,
+                    onValueChange = { pinInput = it },
+                    label = { Text("4-Digit PIN") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (pinInput == CORRECT_PIN) {
+                        isVaultOpen = true
+                        showPasswordDialog = false
+                        pinInput = ""
+                    } else {
+                        pinInput = "" // Clears if wrong
+                    }
+                }) { Text("Unlock") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPasswordDialog = false
+                    pinInput = ""
+                }) { Text("Cancel") }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = "My Notes App",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        // App Header with Vault Toggle
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isVaultOpen) "🔒 Secret Vault" else "My Notes App",
+                style = MaterialTheme.typography.headlineMedium,
+                color = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Unspecified
+            )
+
+            IconButton(onClick = {
+                if (isVaultOpen) {
+                    isVaultOpen = false // Instantly lock it
+                } else {
+                    showPasswordDialog = true // Prompt for PIN to open
+                }
+            }) {
+                Icon(
+                    imageVector = Icons.Filled.Lock,
+                    contentDescription = "Vault Toggle",
+                    tint = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Gray
+                )
+            }
+        }
 
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            label = { Text("🔍 Search notes...") },
+            label = { Text("🔍 Search ${if (isVaultOpen) "hidden" else "public"} notes...") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -109,7 +179,6 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Dynamic Save / Update Button
         Button(
             onClick = {
                 if (noteText.isNotBlank()) {
@@ -117,34 +186,27 @@ fun NotesScreen() {
                     val noteWithTimestamp = "$noteText | Saved at $timeStamp"
 
                     if (editingNoteData != null) {
-                        // Replace the old note with the updated one
-                        val index = notesList.indexOf(editingNoteData)
-                        if (index != -1) {
-                            notesList[index] = noteWithTimestamp
-                        }
-                        editingNoteData = null // Reset editing state
+                        val index = activeNotesList.indexOf(editingNoteData)
+                        if (index != -1) activeNotesList[index] = noteWithTimestamp
+                        editingNoteData = null
                     } else {
-                        // Add as a brand new note
-                        notesList.add(noteWithTimestamp)
+                        activeNotesList.add(noteWithTimestamp)
                     }
 
-                    saveNotesToFile(context, notesList)
+                    saveNotesToFile(context, activeNotesList, activeFileName)
                     noteText = ""
                 }
             },
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isVaultOpen) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+            )
         ) {
             Text(if (editingNoteData != null) "Update Note" else "Save Note")
         }
 
-        // Cancel Edit Button (Only shows when editing)
         if (editingNoteData != null) {
-            TextButton(
-                onClick = {
-                    editingNoteData = null
-                    noteText = ""
-                }
-            ) {
+            TextButton(onClick = { editingNoteData = null; noteText = "" }) {
                 Text("Cancel Edit", color = MaterialTheme.colorScheme.secondary)
             }
         }
@@ -157,10 +219,10 @@ fun NotesScreen() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(text = "Saved Notes:", style = MaterialTheme.typography.titleMedium)
-            if (notesList.isNotEmpty()) {
+            if (activeNotesList.isNotEmpty()) {
                 TextButton(onClick = {
-                    notesList.clear()
-                    saveNotesToFile(context, notesList)
+                    activeNotesList.clear()
+                    saveNotesToFile(context, activeNotesList, activeFileName)
                 }) {
                     Text("Clear All", color = MaterialTheme.colorScheme.error)
                 }
@@ -175,7 +237,7 @@ fun NotesScreen() {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (searchQuery.isEmpty()) "📝 No notes saved yet!" else "🔍 No matching notes found!",
+                    text = if (searchQuery.isEmpty()) "📝 No notes saved here yet!" else "🔍 No matching notes found!",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -188,6 +250,8 @@ fun NotesScreen() {
                     val noteTime = parts.getOrNull(1) ?: ""
 
                     val colorIndex = abs(noteData.hashCode()) % pastelColors.size
+                    // Make vault cards a bit distinct by using a fixed color if preferred,
+                    // but keeping pastels keeps the UI consistent!
                     val cardBackgroundColor = pastelColors[colorIndex]
 
                     Card(
@@ -215,47 +279,30 @@ fun NotesScreen() {
                                 }
                             }
 
-                            // ICON ROW: Edit, Share & Delete
                             Row {
-                                // EDIT BUTTON
                                 IconButton(onClick = {
                                     editingNoteData = noteData
-                                    noteText = noteContent // Loads the text back into the text box
+                                    noteText = noteContent
                                 }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Edit,
-                                        contentDescription = "Edit Note",
-                                        tint = MaterialTheme.colorScheme.secondary
-                                    )
+                                    Icon(Icons.Filled.Edit, "Edit Note", tint = MaterialTheme.colorScheme.secondary)
                                 }
 
-                                // SHARE BUTTON
                                 IconButton(onClick = {
                                     val sendIntent = Intent().apply {
                                         action = Intent.ACTION_SEND
                                         putExtra(Intent.EXTRA_TEXT, noteContent)
                                         type = "text/plain"
                                     }
-                                    val shareIntent = Intent.createChooser(sendIntent, "Share note via...")
-                                    context.startActivity(shareIntent)
+                                    context.startActivity(Intent.createChooser(sendIntent, "Share note via..."))
                                 }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Share,
-                                        contentDescription = "Share Note",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
+                                    Icon(Icons.Filled.Share, "Share Note", tint = MaterialTheme.colorScheme.primary)
                                 }
 
-                                // DELETE BUTTON
                                 IconButton(onClick = {
-                                    notesList.remove(noteData)
-                                    saveNotesToFile(context, notesList)
+                                    activeNotesList.remove(noteData)
+                                    saveNotesToFile(context, activeNotesList, activeFileName)
                                 }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Delete,
-                                        contentDescription = "Delete Note",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
+                                    Icon(Icons.Filled.Delete, "Delete Note", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
                         }
