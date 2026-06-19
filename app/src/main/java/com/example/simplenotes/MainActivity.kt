@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Upgraded Storage helpers to support multiple files
+// Storage helpers for Notes
 fun saveNotesToFile(context: Context, notes: List<String>, fileName: String) {
     val file = File(context.filesDir, fileName)
     file.writeText(notes.joinToString("\n"))
@@ -60,6 +60,17 @@ fun loadNotesFromFile(context: Context, fileName: String): List<String> {
     }
 }
 
+// Storage helpers for Custom PIN
+fun savePinToFile(context: Context, pin: String) {
+    val file = File(context.filesDir, "vault_pin.txt")
+    file.writeText(pin)
+}
+
+fun loadPinFromFile(context: Context): String {
+    val file = File(context.filesDir, "vault_pin.txt")
+    return if (file.exists()) file.readText() else ""
+}
+
 @Composable
 fun NotesScreen() {
     val context = LocalContext.current
@@ -71,7 +82,8 @@ fun NotesScreen() {
     var isVaultOpen by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var pinInput by remember { mutableStateOf("") }
-    val CORRECT_PIN = "1234"
+    var savedPin by remember { mutableStateOf(loadPinFromFile(context)) }
+    var pinErrorMessage by remember { mutableStateOf(false) }
 
     // Two separate lists for public and hidden notes
     val publicNotes = remember { mutableStateListOf<String>().apply {
@@ -81,7 +93,6 @@ fun NotesScreen() {
         addAll(loadNotesFromFile(context, "hidden_notes.txt"))
     } }
 
-    // Dynamically point to the active list and file based on vault state
     val activeNotesList = if (isVaultOpen) hiddenNotes else publicNotes
     val activeFileName = if (isVaultOpen) "hidden_notes.txt" else "saved_notes.txt"
 
@@ -94,37 +105,63 @@ fun NotesScreen() {
         Color(0xFFFCE4EC), Color(0xFFF3E5F5), Color(0xFFFFF3E0)
     )
 
-    // Password Entry Pop-up
+    // Dynamic Password Entry Pop-up
     if (showPasswordDialog) {
         AlertDialog(
             onDismissRequest = {
                 showPasswordDialog = false
                 pinInput = ""
+                pinErrorMessage = false
             },
-            title = { Text("Enter Secret PIN") },
+            title = {
+                Text(if (savedPin.isEmpty()) "Create a 4-Digit PIN" else "Enter Secret PIN")
+            },
             text = {
-                OutlinedTextField(
-                    value = pinInput,
-                    onValueChange = { pinInput = it },
-                    label = { Text("4-Digit PIN") },
-                    singleLine = true
-                )
+                Column {
+                    OutlinedTextField(
+                        value = pinInput,
+                        onValueChange = { if (it.length <= 4) pinInput = it },
+                        label = { Text("PIN") },
+                        singleLine = true,
+                        isError = pinErrorMessage
+                    )
+                    if (pinErrorMessage) {
+                        Text("Incorrect PIN. Try again.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
             },
             confirmButton = {
                 Button(onClick = {
-                    if (pinInput == CORRECT_PIN) {
-                        isVaultOpen = true
-                        showPasswordDialog = false
-                        pinInput = ""
+                    if (savedPin.isEmpty()) {
+                        // SETTING A NEW PIN
+                        if (pinInput.length == 4) {
+                            savePinToFile(context, pinInput)
+                            savedPin = pinInput
+                            isVaultOpen = true
+                            showPasswordDialog = false
+                            pinInput = ""
+                        }
                     } else {
-                        pinInput = "" // Clears if wrong
+                        // CHECKING EXISTING PIN
+                        if (pinInput == savedPin) {
+                            isVaultOpen = true
+                            showPasswordDialog = false
+                            pinInput = ""
+                            pinErrorMessage = false
+                        } else {
+                            pinErrorMessage = true
+                            pinInput = ""
+                        }
                     }
-                }) { Text("Unlock") }
+                }) {
+                    Text(if (savedPin.isEmpty()) "Set PIN & Open" else "Unlock")
+                }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showPasswordDialog = false
                     pinInput = ""
+                    pinErrorMessage = false
                 }) { Text("Cancel") }
             }
         )
@@ -134,7 +171,7 @@ fun NotesScreen() {
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // App Header with Vault Toggle
+        // App Header
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -148,9 +185,9 @@ fun NotesScreen() {
 
             IconButton(onClick = {
                 if (isVaultOpen) {
-                    isVaultOpen = false // Instantly lock it
+                    isVaultOpen = false // Lock it
                 } else {
-                    showPasswordDialog = true // Prompt for PIN to open
+                    showPasswordDialog = true // Open dialog to setup or enter PIN
                 }
             }) {
                 Icon(
@@ -158,6 +195,18 @@ fun NotesScreen() {
                     contentDescription = "Vault Toggle",
                     tint = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Gray
                 )
+            }
+        }
+
+        // Vault-only controls: Change PIN button
+        if (isVaultOpen) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = {
+                    savedPin = "" // Reset state to trigger the setup dialog
+                    showPasswordDialog = true
+                }) {
+                    Text("Change Vault PIN", color = MaterialTheme.colorScheme.secondary)
+                }
             }
         }
 
@@ -250,8 +299,6 @@ fun NotesScreen() {
                     val noteTime = parts.getOrNull(1) ?: ""
 
                     val colorIndex = abs(noteData.hashCode()) % pastelColors.size
-                    // Make vault cards a bit distinct by using a fixed color if preferred,
-                    // but keeping pastels keeps the UI consistent!
                     val cardBackgroundColor = pastelColors[colorIndex]
 
                     Card(
