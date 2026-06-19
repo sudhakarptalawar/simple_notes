@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -64,6 +65,9 @@ fun NotesScreen() {
     var noteText by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
 
+    // State to track if we are currently editing a note
+    var editingNoteData by remember { mutableStateOf<String?>(null) }
+
     val notesList = remember { mutableStateListOf<String>().apply {
         addAll(loadNotesFromFile(context))
     } }
@@ -99,26 +103,50 @@ fun NotesScreen() {
         OutlinedTextField(
             value = noteText,
             onValueChange = { noteText = it },
-            label = { Text("Enter your note here...") },
+            label = { Text(if (editingNoteData != null) "Edit your note..." else "Enter your note here...") },
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        // Dynamic Save / Update Button
         Button(
             onClick = {
                 if (noteText.isNotBlank()) {
                     val timeStamp = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
                     val noteWithTimestamp = "$noteText | Saved at $timeStamp"
 
-                    notesList.add(noteWithTimestamp)
+                    if (editingNoteData != null) {
+                        // Replace the old note with the updated one
+                        val index = notesList.indexOf(editingNoteData)
+                        if (index != -1) {
+                            notesList[index] = noteWithTimestamp
+                        }
+                        editingNoteData = null // Reset editing state
+                    } else {
+                        // Add as a brand new note
+                        notesList.add(noteWithTimestamp)
+                    }
+
                     saveNotesToFile(context, notesList)
                     noteText = ""
                 }
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Save Note")
+            Text(if (editingNoteData != null) "Update Note" else "Save Note")
+        }
+
+        // Cancel Edit Button (Only shows when editing)
+        if (editingNoteData != null) {
+            TextButton(
+                onClick = {
+                    editingNoteData = null
+                    noteText = ""
+                }
+            ) {
+                Text("Cancel Edit", color = MaterialTheme.colorScheme.secondary)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -187,10 +215,22 @@ fun NotesScreen() {
                                 }
                             }
 
-                            // ICON ROW: Share & Delete side-by-side
+                            // ICON ROW: Edit, Share & Delete
                             Row {
+                                // EDIT BUTTON
                                 IconButton(onClick = {
-                                    // Triggering the Android native share sheet!
+                                    editingNoteData = noteData
+                                    noteText = noteContent // Loads the text back into the text box
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = "Edit Note",
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+
+                                // SHARE BUTTON
+                                IconButton(onClick = {
                                     val sendIntent = Intent().apply {
                                         action = Intent.ACTION_SEND
                                         putExtra(Intent.EXTRA_TEXT, noteContent)
@@ -206,6 +246,7 @@ fun NotesScreen() {
                                     )
                                 }
 
+                                // DELETE BUTTON
                                 IconButton(onClick = {
                                     notesList.remove(noteData)
                                     saveNotesToFile(context, notesList)
