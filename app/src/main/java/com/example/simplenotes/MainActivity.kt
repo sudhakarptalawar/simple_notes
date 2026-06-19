@@ -6,18 +6,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -133,7 +137,6 @@ fun NotesScreen() {
             confirmButton = {
                 Button(onClick = {
                     if (savedPin.isEmpty()) {
-                        // SETTING A NEW PIN
                         if (pinInput.length == 4) {
                             savePinToFile(context, pinInput)
                             savedPin = pinInput
@@ -142,7 +145,6 @@ fun NotesScreen() {
                             pinInput = ""
                         }
                     } else {
-                        // CHECKING EXISTING PIN
                         if (pinInput == savedPin) {
                             isVaultOpen = true
                             showPasswordDialog = false
@@ -171,23 +173,45 @@ fun NotesScreen() {
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // App Header
+        // UPDATED: Profile Header UI
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = if (isVaultOpen) "🔒 Secret Vault" else "My Notes App",
-                style = MaterialTheme.typography.headlineMedium,
-                color = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Unspecified
-            )
+            // Left side: Profile Icon + Greeting
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Person,
+                    contentDescription = "Profile Picture",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer)
+                        .padding(8.dp),
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Hi, Sudhakar!",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (isVaultOpen) "🔒 Secret Vault" else "My Notes",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Gray
+                    )
+                }
+            }
 
+            // Right side: Lock Icon
             IconButton(onClick = {
                 if (isVaultOpen) {
-                    isVaultOpen = false // Lock it
+                    isVaultOpen = false
                 } else {
-                    showPasswordDialog = true // Open dialog to setup or enter PIN
+                    showPasswordDialog = true
                 }
             }) {
                 Icon(
@@ -202,7 +226,7 @@ fun NotesScreen() {
         if (isVaultOpen) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = {
-                    savedPin = "" // Reset state to trigger the setup dialog
+                    savedPin = ""
                     showPasswordDialog = true
                 }) {
                     Text("Change Vault PIN", color = MaterialTheme.colorScheme.secondary)
