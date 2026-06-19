@@ -1,5 +1,6 @@
 package com.example.simplenotes
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,8 +14,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.simplenotes.ui.theme.SimpleNotesTheme
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,10 +38,37 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Helper functions to save and load notes combined with their timestamps
+fun saveNotesToFile(context: Context, notes: List<String>) {
+    val file = File(context.filesDir, "saved_notes.txt")
+    file.writeText(notes.joinToString("\n"))
+}
+
+fun loadNotesFromFile(context: Context): List<String> {
+    val file = File(context.filesDir, "saved_notes.txt")
+    return if (file.exists()) {
+        val content = file.readText()
+        if (content.isBlank()) emptyList() else content.split("\n")
+    } else {
+        emptyList()
+    }
+}
+
 @Composable
 fun NotesScreen() {
+    val context = LocalContext.current
     var noteText by remember { mutableStateOf("") }
-    val notesList = remember { mutableStateListOf<String>() }
+    var searchQuery by remember { mutableStateOf("") } // Search state
+
+    // Initialize list from storage
+    val notesList = remember { mutableStateListOf<String>().apply {
+        addAll(loadNotesFromFile(context))
+    } }
+
+    // Filter list based on what the user types in the search bar
+    val filteredNotes = notesList.filter {
+        it.contains(searchQuery, ignoreCase = true)
+    }
 
     Column(
         modifier = Modifier
@@ -48,6 +81,20 @@ fun NotesScreen() {
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
+
+        // New Feature: Search Bar
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            label = { Text("🔍 Search notes...") },
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = MaterialTheme.colorScheme.secondary,
+                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+            )
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         // Input Field for typing notes
         OutlinedTextField(
@@ -63,7 +110,12 @@ fun NotesScreen() {
         Button(
             onClick = {
                 if (noteText.isNotBlank()) {
-                    notesList.add(noteText)
+                    // Generate a timestamp string (e.g., "07:30 PM")
+                    val timeStamp = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
+                    val noteWithTimestamp = "$noteText | Saved at $timeStamp"
+
+                    notesList.add(noteWithTimestamp)
+                    saveNotesToFile(context, notesList)
                     noteText = ""
                 }
             },
@@ -74,7 +126,7 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Header Row with "Saved Notes" and the new "Clear All" Button
+        // Header Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -85,9 +137,11 @@ fun NotesScreen() {
                 style = MaterialTheme.typography.titleMedium
             )
 
-            // Only show "Clear All" if there are actually notes in the list
             if (notesList.isNotEmpty()) {
-                TextButton(onClick = { notesList.clear() }) {
+                TextButton(onClick = {
+                    notesList.clear()
+                    saveNotesToFile(context, notesList)
+                }) {
                     Text("Clear All", color = MaterialTheme.colorScheme.error)
                 }
             }
@@ -95,8 +149,8 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Dynamic State: Show placeholder text if empty, otherwise show scrollable list
-        if (notesList.isEmpty()) {
+        // Dynamic State
+        if (filteredNotes.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -104,17 +158,21 @@ fun NotesScreen() {
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "📝 No notes saved yet!",
+                    text = if (searchQuery.isEmpty()) "📝 No notes saved yet!" else "🔍 No matching notes found!",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else {
-            // Scrollable List to display all notes
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f)
             ) {
-                items(notesList) { note ->
+                items(filteredNotes) { noteData ->
+                    // Splitting raw data to separate the text from the timestamp
+                    val parts = noteData.split(" | ")
+                    val noteContent = parts.getOrNull(0) ?: ""
+                    val noteTime = parts.getOrNull(1) ?: ""
+
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -127,12 +185,25 @@ fun NotesScreen() {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = note,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = noteContent,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
+                                if (noteTime.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = noteTime,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                            }
 
-                            IconButton(onClick = { notesList.remove(note) }) {
+                            IconButton(onClick = {
+                                notesList.remove(noteData)
+                                saveNotesToFile(context, notesList)
+                            }) {
                                 Icon(
                                     imageVector = Icons.Filled.Delete,
                                     contentDescription = "Delete Note",
