@@ -1,6 +1,7 @@
 package com.example.simplenotes
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -10,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -70,20 +72,13 @@ fun NotesScreen() {
         it.contains(searchQuery, ignoreCase = true)
     }
 
-    // A list of lovely material pastel colors for our cards
     val pastelColors = listOf(
-        Color(0xFFE3F2FD), // Light Blue
-        Color(0xFFE8F5E9), // Light Green
-        Color(0xFFFFFDE7), // Light Yellow
-        Color(0xFFFCE4EC), // Light Pink
-        Color(0xFFF3E5F5), // Light Purple
-        Color(0xFFFFF3E0)  // Light Orange
+        Color(0xFFE3F2FD), Color(0xFFE8F5E9), Color(0xFFFFFDE7),
+        Color(0xFFFCE4EC), Color(0xFFF3E5F5), Color(0xFFFFF3E0)
     )
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
@@ -92,7 +87,6 @@ fun NotesScreen() {
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Search Bar
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -102,7 +96,6 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Input Field
         OutlinedTextField(
             value = noteText,
             onValueChange = { noteText = it },
@@ -112,7 +105,6 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Save Button
         Button(
             onClick = {
                 if (noteText.isNotBlank()) {
@@ -131,17 +123,12 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Header Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Saved Notes:",
-                style = MaterialTheme.typography.titleMedium
-            )
-
+            Text(text = "Saved Notes:", style = MaterialTheme.typography.titleMedium)
             if (notesList.isNotEmpty()) {
                 TextButton(onClick = {
                     notesList.clear()
@@ -154,12 +141,9 @@ fun NotesScreen() {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Dynamic State
         if (filteredNotes.isEmpty()) {
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.fillMaxWidth().weight(1f),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -169,32 +153,21 @@ fun NotesScreen() {
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            ) {
+            LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 items(filteredNotes) { noteData ->
                     val parts = noteData.split(" | ")
                     val noteContent = parts.getOrNull(0) ?: ""
                     val noteTime = parts.getOrNull(1) ?: ""
 
-                    // Deterministically pick a color based on the note text string hash
-                    // This ensures a note keeps its color even when you close and reopen the app!
                     val colorIndex = abs(noteData.hashCode()) % pastelColors.size
                     val cardBackgroundColor = pastelColors[colorIndex]
 
                     Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        // Here we apply our new custom color background!
-                        colors = CardDefaults.cardColors(
-                            containerColor = cardBackgroundColor
-                        )
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBackgroundColor)
                     ) {
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -202,7 +175,7 @@ fun NotesScreen() {
                                 Text(
                                     text = noteContent,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.Black // Explicit contrast against light pastels
+                                    color = Color.Black
                                 )
                                 if (noteTime.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(4.dp))
@@ -214,15 +187,35 @@ fun NotesScreen() {
                                 }
                             }
 
-                            IconButton(onClick = {
-                                notesList.remove(noteData)
-                                saveNotesToFile(context, notesList)
-                            }) {
-                                Icon(
-                                    imageVector = Icons.Filled.Delete,
-                                    contentDescription = "Delete Note",
-                                    tint = MaterialTheme.colorScheme.error
-                                )
+                            // ICON ROW: Share & Delete side-by-side
+                            Row {
+                                IconButton(onClick = {
+                                    // Triggering the Android native share sheet!
+                                    val sendIntent = Intent().apply {
+                                        action = Intent.ACTION_SEND
+                                        putExtra(Intent.EXTRA_TEXT, noteContent)
+                                        type = "text/plain"
+                                    }
+                                    val shareIntent = Intent.createChooser(sendIntent, "Share note via...")
+                                    context.startActivity(shareIntent)
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Share,
+                                        contentDescription = "Share Note",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                IconButton(onClick = {
+                                    notesList.remove(noteData)
+                                    saveNotesToFile(context, notesList)
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "Delete Note",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
