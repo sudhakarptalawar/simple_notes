@@ -37,10 +37,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            SimpleNotesTheme {
+            var isDarkMode by remember { mutableStateOf(false) }
+
+            SimpleNotesTheme(darkTheme = isDarkMode) {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
-                        NotesScreen()
+                        NotesScreen(isDarkMode = isDarkMode, onThemeToggle = { isDarkMode = it })
                     }
                 }
             }
@@ -76,7 +78,7 @@ fun loadPinFromFile(context: Context): String {
 }
 
 @Composable
-fun NotesScreen() {
+fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
     val context = LocalContext.current
     var noteText by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
@@ -170,10 +172,13 @@ fun NotesScreen() {
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // UPDATED: Profile Header UI
+        // Profile Header UI with Direct Icon Button Toggle
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -206,23 +211,34 @@ fun NotesScreen() {
                 }
             }
 
-            // Right side: Lock Icon
-            IconButton(onClick = {
-                if (isVaultOpen) {
-                    isVaultOpen = false
-                } else {
-                    showPasswordDialog = true
+            // Right side: Direct Dark Mode Button & Lock Icon
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = { onThemeToggle(!isDarkMode) },
+                    modifier = Modifier.padding(end = 4.dp)
+                ) {
+                    Text(
+                        text = if (isDarkMode) "🌙" else "☀️",
+                        style = MaterialTheme.typography.headlineSmall
+                    )
                 }
-            }) {
-                Icon(
-                    imageVector = Icons.Filled.Lock,
-                    contentDescription = "Vault Toggle",
-                    tint = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Gray
-                )
+
+                IconButton(onClick = {
+                    if (isVaultOpen) {
+                        isVaultOpen = false
+                    } else {
+                        showPasswordDialog = true
+                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = "Vault Toggle",
+                        tint = if (isVaultOpen) MaterialTheme.colorScheme.primary else Color.Gray
+                    )
+                }
             }
         }
 
-        // Vault-only controls: Change PIN button
         if (isVaultOpen) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = {
@@ -291,7 +307,7 @@ fun NotesScreen() {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "Saved Notes:", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Saved Notes:", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             if (activeNotesList.isNotEmpty()) {
                 TextButton(onClick = {
                     activeNotesList.clear()
@@ -323,7 +339,10 @@ fun NotesScreen() {
                     val noteTime = parts.getOrNull(1) ?: ""
 
                     val colorIndex = abs(noteData.hashCode()) % pastelColors.size
-                    val cardBackgroundColor = pastelColors[colorIndex]
+
+                    val cardBackgroundColor = if (isDarkMode) Color(0xFF2C2C2C) else pastelColors[colorIndex]
+                    val cardTextColor = if (isDarkMode) Color.White else Color.Black
+                    val timeTextColor = if (isDarkMode) Color.LightGray else Color.DarkGray
 
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
@@ -338,14 +357,14 @@ fun NotesScreen() {
                                 Text(
                                     text = noteContent,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    color = Color.Black
+                                    color = cardTextColor
                                 )
                                 if (noteTime.isNotEmpty()) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = noteTime,
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Color.DarkGray
+                                        color = timeTextColor
                                     )
                                 }
                             }
