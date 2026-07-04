@@ -2,16 +2,23 @@ package com.example.simplenotes
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
@@ -23,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.simplenotes.ui.theme.SimpleNotesTheme
@@ -83,6 +92,7 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
     var noteText by remember { mutableStateOf("") }
     var searchQuery by remember { mutableStateOf("") }
     var editingNoteData by remember { mutableStateOf<String?>(null) }
+    var attachedImageUri by remember { mutableStateOf("") }
 
     // Vault State Variables
     var isVaultOpen by remember { mutableStateOf(false) }
@@ -91,7 +101,17 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
     var savedPin by remember { mutableStateOf(loadPinFromFile(context)) }
     var pinErrorMessage by remember { mutableStateOf(false) }
 
-    // Two separate lists for public and hidden notes
+    // Image Picker Launcher requesting persistent permissions
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                context.contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                attachedImageUri = it.toString()
+            }
+        }
+    )
+
     val publicNotes = remember { mutableStateListOf<String>().apply {
         addAll(loadNotesFromFile(context, "saved_notes.txt"))
     } }
@@ -111,7 +131,6 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
         Color(0xFFFCE4EC), Color(0xFFF3E5F5), Color(0xFFFFF3E0)
     )
 
-    // Dynamic Password Entry Pop-up
     if (showPasswordDialog) {
         AlertDialog(
             onDismissRequest = {
@@ -178,13 +197,11 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Profile Header UI with Direct Icon Button Toggle
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left side: Profile Icon + Greeting
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Filled.Person,
@@ -211,16 +228,12 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
                 }
             }
 
-            // Right side: Direct Dark Mode Button & Lock Icon
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(
                     onClick = { onThemeToggle(!isDarkMode) },
                     modifier = Modifier.padding(end = 4.dp)
                 ) {
-                    Text(
-                        text = if (isDarkMode) "🌙" else "☀️",
-                        style = MaterialTheme.typography.headlineSmall
-                    )
+                    Text(text = if (isDarkMode) "🌙" else "☀️", style = MaterialTheme.typography.headlineSmall)
                 }
 
                 IconButton(onClick = {
@@ -259,20 +272,29 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        OutlinedTextField(
-            value = noteText,
-            onValueChange = { noteText = it },
-            label = { Text(if (editingNoteData != null) "Edit your note..." else "Enter your note here...") },
-            modifier = Modifier.fillMaxWidth()
-        )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = noteText,
+                onValueChange = { noteText = it },
+                label = { Text(if (editingNoteData != null) "Edit your note..." else "Enter your note here...") },
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = { imagePickerLauncher.launch(arrayOf("image/*")) }) {
+                Icon(Icons.Filled.AddCircle, contentDescription = "Attach Image", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        if (attachedImageUri.isNotEmpty()) {
+            Text("📷 Image attached and ready to save!", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, modifier = Modifier.align(Alignment.Start).padding(start = 8.dp, top = 4.dp))
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
         Button(
             onClick = {
-                if (noteText.isNotBlank()) {
+                if (noteText.isNotBlank() || attachedImageUri.isNotBlank()) {
                     val timeStamp = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date())
-                    val noteWithTimestamp = "$noteText | Saved at $timeStamp"
+                    val noteWithTimestamp = "$noteText | Saved at $timeStamp | $attachedImageUri"
 
                     if (editingNoteData != null) {
                         val index = activeNotesList.indexOf(editingNoteData)
@@ -284,6 +306,7 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
 
                     saveNotesToFile(context, activeNotesList, activeFileName)
                     noteText = ""
+                    attachedImageUri = ""
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -295,7 +318,11 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
         }
 
         if (editingNoteData != null) {
-            TextButton(onClick = { editingNoteData = null; noteText = "" }) {
+            TextButton(onClick = {
+                editingNoteData = null
+                noteText = ""
+                attachedImageUri = ""
+            }) {
                 Text("Cancel Edit", color = MaterialTheme.colorScheme.secondary)
             }
         }
@@ -337,6 +364,7 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
                     val parts = noteData.split(" | ")
                     val noteContent = parts.getOrNull(0) ?: ""
                     val noteTime = parts.getOrNull(1) ?: ""
+                    val noteImage = parts.getOrNull(2) ?: ""
 
                     val colorIndex = abs(noteData.hashCode()) % pastelColors.size
 
@@ -348,51 +376,89 @@ fun NotesScreen(isDarkMode: Boolean, onThemeToggle: (Boolean) -> Unit) {
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         colors = CardDefaults.cardColors(containerColor = cardBackgroundColor)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = noteContent,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = cardTextColor
-                                )
-                                if (noteTime.isNotEmpty()) {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = noteTime,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = timeTextColor
-                                    )
+                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    if (noteContent.isNotEmpty()) {
+                                        Text(
+                                            text = noteContent,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = cardTextColor
+                                        )
+                                    }
+                                    if (noteTime.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = noteTime,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = timeTextColor
+                                        )
+                                    }
+                                }
+
+                                Row {
+                                    IconButton(onClick = {
+                                        editingNoteData = noteData
+                                        noteText = noteContent
+                                        attachedImageUri = noteImage
+                                    }) {
+                                        Icon(Icons.Filled.Edit, "Edit Note", tint = MaterialTheme.colorScheme.secondary)
+                                    }
+
+                                    IconButton(onClick = {
+                                        val sendIntent = Intent().apply {
+                                            action = Intent.ACTION_SEND
+                                            putExtra(Intent.EXTRA_TEXT, noteContent)
+                                            type = "text/plain"
+                                        }
+                                        context.startActivity(Intent.createChooser(sendIntent, "Share note via..."))
+                                    }) {
+                                        Icon(Icons.Filled.Share, "Share Note", tint = MaterialTheme.colorScheme.primary)
+                                    }
+
+                                    IconButton(onClick = {
+                                        activeNotesList.remove(noteData)
+                                        saveNotesToFile(context, activeNotesList, activeFileName)
+                                    }) {
+                                        Icon(Icons.Filled.Delete, "Delete Note", tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
 
-                            Row {
-                                IconButton(onClick = {
-                                    editingNoteData = noteData
-                                    noteText = noteContent
-                                }) {
-                                    Icon(Icons.Filled.Edit, "Edit Note", tint = MaterialTheme.colorScheme.secondary)
+                            // UPDATED LOGIC: No Composables inside the try-catch block!
+                            if (noteImage.isNotEmpty()) {
+                                // 1. Attempt to decode the image safely first
+                                val bitmap = try {
+                                    val uri = Uri.parse(noteImage)
+                                    val inputStream = context.contentResolver.openInputStream(uri)
+                                    BitmapFactory.decodeStream(inputStream)
+                                } catch (e: Exception) {
+                                    null
                                 }
 
-                                IconButton(onClick = {
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_TEXT, noteContent)
-                                        type = "text/plain"
-                                    }
-                                    context.startActivity(Intent.createChooser(sendIntent, "Share note via..."))
-                                }) {
-                                    Icon(Icons.Filled.Share, "Share Note", tint = MaterialTheme.colorScheme.primary)
-                                }
-
-                                IconButton(onClick = {
-                                    activeNotesList.remove(noteData)
-                                    saveNotesToFile(context, activeNotesList, activeFileName)
-                                }) {
-                                    Icon(Icons.Filled.Delete, "Delete Note", tint = MaterialTheme.colorScheme.error)
+                                // 2. Display the UI based on the result
+                                if (bitmap != null) {
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = "Attached Note Image",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(200.dp)
+                                            .padding(top = 12.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Text(
+                                        text = "⚠️ Image removed or unavailable",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
                                 }
                             }
                         }
