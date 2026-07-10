@@ -55,6 +55,7 @@ data class Note(
 // -------------------------
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -63,7 +64,16 @@ class MainActivity : ComponentActivity() {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
 
-                // THE SIDE MENU (Swipe from left edge to open!)
+                // Fixed: Starts on Page 0 (The Editor/Write screen) exactly as it originally did
+                val pagerState = rememberPagerState(pageCount = { 2 }, initialPage = 0)
+
+                var viewingNote by remember { mutableStateOf<Note?>(null) }
+                var noteToEdit by remember { mutableStateOf<Note?>(null) }
+
+                LaunchedEffect(noteToEdit) {
+                    if (noteToEdit != null) pagerState.animateScrollToPage(0)
+                }
+
                 ModalNavigationDrawer(
                     drawerState = drawerState,
                     gesturesEnabled = true,
@@ -86,19 +96,51 @@ class MainActivity : ComponentActivity() {
 
                             Spacer(modifier = Modifier.weight(1f))
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            Text("v2.3.0 • Designed by Sudhakar", style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(16.dp))
+                            Text("v2.4.1 • Designed by Sudhakar", style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(16.dp))
                         }
                     }
                 ) {
-                    // MAIN APP SCAFFOLD (Handles the spacing perfectly to remove the gap)
-                    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        bottomBar = {
+                            if (viewingNote == null) {
+                                NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
+                                    // FIXED ORDER: Left button is Page 0 (Write)
+                                    NavigationBarItem(
+                                        icon = { Icon(Icons.Filled.Create, "Write") },
+                                        label = { Text("Write") },
+                                        selected = pagerState.currentPage == 0,
+                                        onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
+                                    )
+                                    // FIXED ORDER: Right button is Page 1 (Notes)
+                                    NavigationBarItem(
+                                        icon = { Icon(Icons.Filled.List, "Notes") },
+                                        label = { Text("Notes") },
+                                        selected = pagerState.currentPage == 1,
+                                        onClick = { scope.launch { pagerState.animateScrollToPage(1) } }
+                                    )
+                                }
+                            }
+                        },
+                        floatingActionButton = {
+                            // "Compose" FAB only shows up when you are looking at your Notes list (Page 1)
+                            if (pagerState.currentPage == 1 && viewingNote == null) {
+                                ExtendedFloatingActionButton(
+                                    onClick = {
+                                        noteToEdit = null
+                                        scope.launch { pagerState.animateScrollToPage(0) }
+                                    },
+                                    icon = { Icon(Icons.Filled.Create, "Compose") },
+                                    text = { Text("Compose") },
+                                    containerColor = Color(0xFFFFE0B2),
+                                    contentColor = Color(0xFF5D4037)
+                                )
+                            }
+                        }
+                    ) { innerPadding ->
                         Box(modifier = Modifier.padding(innerPadding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
 
-                            var viewingNote by remember { mutableStateOf<Note?>(null) }
-                            var noteToEdit by remember { mutableStateOf<Note?>(null) }
-
                             if (viewingNote != null) {
-                                // READING OVERLAY
                                 ViewNoteScreen(
                                     note = viewingNote!!,
                                     onBack = { viewingNote = null },
@@ -110,8 +152,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             } else {
-                                // --- THE GLOBAL FIXED HEADER ---
-                                // This stays perfectly still while the pages slide underneath!
                                 Column(modifier = Modifier.fillMaxSize()) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -130,12 +170,23 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
 
-                                    // --- THE SLIDING PAGES ---
-                                    MainAppPager(
-                                        noteToEdit = noteToEdit,
-                                        onClearEdit = { noteToEdit = null },
-                                        onNoteClick = { clickedNote -> viewingNote = clickedNote }
-                                    )
+                                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                                        when (page) {
+                                            // Page 0: The Editor (Write)
+                                            0 -> CreateNoteScreen(
+                                                incomingNote = noteToEdit,
+                                                onNoteSaved = {
+                                                    noteToEdit = null
+                                                    scope.launch { pagerState.animateScrollToPage(1) }
+                                                }
+                                            )
+                                            // Page 1: The Saved Notes List (Notes)
+                                            1 -> SavedNotesScreen(
+                                                currentPage = pagerState.currentPage,
+                                                onNoteClick = { clickedNote -> viewingNote = clickedNote }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -146,31 +197,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun MainAppPager(noteToEdit: Note?, onClearEdit: () -> Unit, onNoteClick: (Note) -> Unit) {
-    val pagerState = rememberPagerState(pageCount = { 2 })
-    val coroutineScope = rememberCoroutineScope()
-
-    LaunchedEffect(noteToEdit) { if (noteToEdit != null) pagerState.animateScrollToPage(0) }
-
-    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-        when (page) {
-            0 -> CreateNoteScreen(incomingNote = noteToEdit, onNoteSaved = { onClearEdit() })
-            1 -> SavedNotesScreen(
-                currentPage = pagerState.currentPage,
-                onNoteClick = onNoteClick,
-                onNewNoteClick = {
-                    onClearEdit()
-                    coroutineScope.launch { pagerState.animateScrollToPage(0) }
-                }
-            )
-        }
-    }
-}
-
 // ==========================================
-// PAGE 1: CREATE / EDIT SCREEN (Header Removed)
+// PAGE 0: CREATE / EDIT SCREEN (Write)
 // ==========================================
 @Composable
 fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
@@ -210,7 +238,6 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
             }
         }
 
-        // Unified Action Bar at Bottom
         Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.background) {
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { Toast.makeText(context, "Tools coming soon!", Toast.LENGTH_SHORT).show() }) {
@@ -228,7 +255,7 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
                             val noteToSave = Note(id = currentNoteId, title = title, blocks = blocks.toMutableList())
                             context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().putString(noteToSave.id, Gson().toJson(noteToSave)).apply()
                             title = ""; blocks.clear(); blocks.add(NoteBlock("TEXT", "")); currentNoteId = UUID.randomUUID().toString()
-                            onNoteSaved(); Toast.makeText(context, "Note Saved! Swipe Right to view.", Toast.LENGTH_SHORT).show()
+                            onNoteSaved(); Toast.makeText(context, "Note Saved!", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
@@ -243,10 +270,10 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
 }
 
 // ==========================================
-// PAGE 2: SAVED NOTES SCREEN (Header Removed)
+// PAGE 1: SAVED NOTES SCREEN (Notes)
 // ==========================================
 @Composable
-fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit, onNewNoteClick: () -> Unit) {
+fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit) {
     val context = LocalContext.current
     val sharedPreferences = context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE)
     var savedNotes by remember { mutableStateOf<List<Note>>(emptyList()) }
@@ -304,20 +331,11 @@ fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit, onNewNoteCli
                 }
             }
         }
-
-        // FLOATING ACTION BUTTON
-        FloatingActionButton(
-            onClick = onNewNoteClick,
-            containerColor = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-        ) {
-            Icon(Icons.Filled.Add, "Create New Note")
-        }
     }
 }
 
 // ==========================================
-// VIEW NOTE SCREEN (Unchanged)
+// VIEW NOTE SCREEN (Reading Overlay)
 // ==========================================
 @Composable
 fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete: (Note) -> Unit) {
@@ -334,9 +352,9 @@ fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete:
             }
             Box {
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, "Options") }
-     +           DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenu = false; onEdit() })
- + +                  DropdownMenuItem(text = { Text("Share") }, onClick = {
+                    DropdownMenuItem(text = { Text("Share") }, onClick = {
                         showMenu = false
                         val textToShare = note.blocks.filter { it.type == "TEXT" }.joinToString("\n\n") { it.content }
                         context.startActivity(Intent.createChooser(Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n$textToShare"); type = "text/plain" }, "Share note via..."))
