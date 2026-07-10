@@ -23,12 +23,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -65,34 +60,80 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             SimpleNotesTheme(darkTheme = false) {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Box(modifier = Modifier.padding(innerPadding)) {
-                        // --- NAVIGATION STATE ---
-                        // This decides if we are looking at the swiping pages, or reading a specific note!
-                        var viewingNote by remember { mutableStateOf<Note?>(null) }
-                        var noteToEdit by remember { mutableStateOf<Note?>(null) }
+                // --- THE NEW NAVIGATION DRAWER ---
+                val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                val scope = rememberCoroutineScope()
 
-                        if (viewingNote != null) {
-                            ViewNoteScreen(
-                                note = viewingNote!!,
-                                onBack = { viewingNote = null },
-                                onEdit = {
-                                    noteToEdit = viewingNote
-                                    viewingNote = null
-                                },
-                                onDelete = { note ->
-                                    val prefs = getSharedPreferences("NotesVault", Context.MODE_PRIVATE)
-                                    prefs.edit().remove(note.id).apply()
-                                    Toast.makeText(this@MainActivity, "Note Deleted", Toast.LENGTH_SHORT).show()
-                                    viewingNote = null
-                                }
+                ModalNavigationDrawer(
+                    drawerState = drawerState,
+                    drawerContent = {
+                        ModalDrawerSheet(
+                            modifier = Modifier.width(280.dp),
+                            drawerContainerColor = Color.White
+                        ) {
+                            Spacer(modifier = Modifier.height(32.dp))
+                            // Drawer Header
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Filled.Person, contentDescription = "Profile", modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text("Hi Sudhakar", style = MaterialTheme.typography.titleLarge)
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+
+                            // Drawer Menu Items
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Star, "Starred") }, label = { Text("Starred") }, selected = false, onClick = { /* TODO */ })
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Delete, "Bin") }, label = { Text("Bin") }, selected = false, onClick = { /* TODO */ })
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Lock, "Locked Folder") }, label = { Text("Locked Folder") }, selected = false, onClick = { /* TODO */ })
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Cloud, "Cloud") }, label = { Text("Cloud") }, selected = false, onClick = { /* TODO */ })
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.List, "All Notes") }, label = { Text("All Notes") }, selected = true, onClick = { scope.launch { drawerState.close() } })
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Info, "Help") }, label = { Text("Help and feedback") }, selected = false, onClick = { /* TODO */ })
+
+                            // Pushes the signature to the very bottom!
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            // The Signature
+                            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                            Text(
+                                text = "v2.2.0 • Designed by Sudhakar",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(16.dp)
                             )
-                        } else {
-                            MainAppPager(
-                                noteToEdit = noteToEdit,
-                                onClearEdit = { noteToEdit = null },
-                                onNoteClick = { clickedNote -> viewingNote = clickedNote }
-                            )
+                        }
+                    }
+                ) {
+                    // MAIN APP CONTENT INSIDE DRAWER
+                    Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                        Box(modifier = Modifier.padding(innerPadding)) {
+                            var viewingNote by remember { mutableStateOf<Note?>(null) }
+                            var noteToEdit by remember { mutableStateOf<Note?>(null) }
+
+                            if (viewingNote != null) {
+                                ViewNoteScreen(
+                                    note = viewingNote!!,
+                                    onBack = { viewingNote = null },
+                                    onEdit = {
+                                        noteToEdit = viewingNote
+                                        viewingNote = null
+                                    },
+                                    onDelete = { note ->
+                                        val prefs = getSharedPreferences("NotesVault", Context.MODE_PRIVATE)
+                                        prefs.edit().remove(note.id).apply()
+                                        Toast.makeText(this@MainActivity, "Note Deleted", Toast.LENGTH_SHORT).show()
+                                        viewingNote = null
+                                    }
+                                )
+                            } else {
+                                MainAppPager(
+                                    noteToEdit = noteToEdit,
+                                    onClearEdit = { noteToEdit = null },
+                                    onNoteClick = { clickedNote -> viewingNote = clickedNote },
+                                    onOpenMenu = { scope.launch { drawerState.open() } } // Triggers the Drawer!
+                                )
+                            }
                         }
                     }
                 }
@@ -103,11 +144,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MainAppPager(noteToEdit: Note?, onClearEdit: () -> Unit, onNoteClick: (Note) -> Unit) {
+fun MainAppPager(noteToEdit: Note?, onClearEdit: () -> Unit, onNoteClick: (Note) -> Unit, onOpenMenu: () -> Unit) {
     val pagerState = rememberPagerState(pageCount = { 2 })
     val coroutineScope = rememberCoroutineScope()
 
-    // If the user clicked "Edit", slide them automatically to Page 0!
     LaunchedEffect(noteToEdit) {
         if (noteToEdit != null) {
             pagerState.animateScrollToPage(0)
@@ -118,7 +158,8 @@ fun MainAppPager(noteToEdit: Note?, onClearEdit: () -> Unit, onNoteClick: (Note)
         when (page) {
             0 -> CreateNoteScreen(
                 incomingNote = noteToEdit,
-                onNoteSaved = { onClearEdit() }
+                onNoteSaved = { onClearEdit() },
+                onOpenMenu = onOpenMenu
             )
             1 -> SavedNotesScreen(
                 currentPage = pagerState.currentPage,
@@ -126,51 +167,35 @@ fun MainAppPager(noteToEdit: Note?, onClearEdit: () -> Unit, onNoteClick: (Note)
                 onNewNoteClick = {
                     onClearEdit()
                     coroutineScope.launch { pagerState.animateScrollToPage(0) }
-                }
+                },
+                onOpenMenu = onOpenMenu
             )
         }
     }
 }
 
 // ==========================================
-// THE NEW "READING MODE" SCREEN (From your sketch!)
+// VIEW NOTE SCREEN (Unchanged)
 // ==========================================
 @Composable
 fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete: (Note) -> Unit) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFFFFDE7)) // Soft pastel yellow for reading mode
-            .padding(16.dp)
-            .padding(top = 24.dp) // Extra padding for status bar
-    ) {
-        // --- TOP BAR WITH 3-DOT MENU ---
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    Column(modifier = Modifier.fillMaxSize().background(Color(0xFFFFFDE7)).padding(16.dp).padding(top = 24.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Filled.ArrowBack, "Back")
-                }
+                IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Back") }
                 Icon(Icons.Filled.Person, "Profile", tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(if (note.title.isNotBlank()) note.title else "Untitled Note", style = MaterialTheme.typography.titleLarge)
             }
-
             Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Filled.MoreVert, "Options")
-                }
+                IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, "Options") }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenu = false; onEdit() })
                     DropdownMenuItem(text = { Text("Share") }, onClick = {
                         showMenu = false
-                        // Combine all text blocks to share
                         val textToShare = note.blocks.filter { it.type == "TEXT" }.joinToString("\n\n") { it.content }
                         val sendIntent = Intent().apply {
                             action = Intent.ACTION_SEND
@@ -183,32 +208,14 @@ fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete:
                 }
             }
         }
-
         Spacer(modifier = Modifier.height(8.dp))
-
-        // --- READ-ONLY BLOCKS LIST ---
         LazyColumn(modifier = Modifier.fillMaxSize()) {
             items(note.blocks) { block ->
                 if (block.type == "TEXT" && block.content.isNotBlank()) {
-                    Text(
-                        text = block.content,
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(vertical = 6.dp)
-                    )
+                    Text(text = block.content, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 6.dp))
                 } else if (block.type == "IMAGE") {
-                    val bitmap = try {
-                        val uri = Uri.parse(block.content)
-                        BitmapFactory.decodeStream(context.contentResolver.openInputStream(uri))
-                    } catch (e: Exception) { null }
-
-                    if (bitmap != null) {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "Attached Image",
-                            modifier = Modifier.fillMaxWidth().height(250.dp).padding(vertical = 12.dp).clip(RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
+                    val bitmap = try { BitmapFactory.decodeStream(context.contentResolver.openInputStream(Uri.parse(block.content))) } catch (e: Exception) { null }
+                    if (bitmap != null) { Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Attached Image", modifier = Modifier.fillMaxWidth().height(250.dp).padding(vertical = 12.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop) }
                 }
             }
         }
@@ -216,18 +223,15 @@ fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete:
 }
 
 // ==========================================
-// PAGE 1: CREATE / EDIT SCREEN
+// PAGE 1: CREATE / EDIT SCREEN (Updated Buttons)
 // ==========================================
 @Composable
-fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
+fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit, onOpenMenu: () -> Unit) {
     val context = LocalContext.current
-
-    // Use the incoming note's ID if we are editing, otherwise generate a new one
     var currentNoteId by remember { mutableStateOf(UUID.randomUUID().toString()) }
     var title by remember { mutableStateOf("") }
     val blocks = remember { mutableStateListOf<NoteBlock>(NoteBlock("TEXT", "")) }
 
-    // If an incoming note arrives (User clicked Edit), load its data into the boxes!
     LaunchedEffect(incomingNote) {
         if (incomingNote != null) {
             currentNoteId = incomingNote.id
@@ -235,7 +239,6 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
             blocks.clear()
             incomingNote.blocks.forEach { blocks.add(NoteBlock(it.type, it.content)) }
         } else {
-            // Reset for a brand new note
             currentNoteId = UUID.randomUUID().toString()
             title = ""
             blocks.clear()
@@ -255,72 +258,91 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
     )
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp).padding(top = 24.dp)) {
+        // --- TOP HEADER ---
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Person, "Profile", modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+                // Click the profile to open the side menu!
+                IconButton(onClick = onOpenMenu) {
+                    Icon(Icons.Filled.Menu, "Menu", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(if (incomingNote != null) "Editing Note..." else "Hi Sudhakar", style = MaterialTheme.typography.titleMedium)
             }
-            IconButton(onClick = { /* Settings later */ }) {
-                Icon(Icons.Filled.Settings, "Settings", tint = Color.Gray)
-            }
+            IconButton(onClick = { /* Settings */ }) { Icon(Icons.Filled.Settings, "Settings", tint = Color.Gray) }
         }
 
         OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Enter Title") }, modifier = Modifier.fillMaxWidth(), singleLine = true, textStyle = MaterialTheme.typography.titleLarge)
         Spacer(modifier = Modifier.height(12.dp))
 
+        // --- EDITOR AREA ---
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
             itemsIndexed(blocks) { index, block ->
                 if (block.type == "TEXT") {
                     OutlinedTextField(value = block.content, onValueChange = { newText -> blocks[index] = blocks[index].copy(content = newText) }, placeholder = { Text(if (index == 0) "Start notes writing from here..." else "Again continue...") }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
                 } else if (block.type == "IMAGE") {
                     val bitmap = try { BitmapFactory.decodeStream(context.contentResolver.openInputStream(Uri.parse(block.content))) } catch (e: Exception) { null }
-                    if (bitmap != null) {
-                        Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Attached Image", modifier = Modifier.fillMaxWidth().height(200.dp).padding(vertical = 8.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                    }
+                    if (bitmap != null) { Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Attached Image", modifier = Modifier.fillMaxWidth().height(200.dp).padding(vertical = 8.dp).clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop) }
                 }
             }
+        }
 
-            item {
-                Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 32.dp), contentAlignment = Alignment.Center) {
+        // --- NEW UNIFIED ACTION BAR ---
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // LEFT SIDE: Other Tools
+                IconButton(onClick = { Toast.makeText(context, "Tools coming soon!", Toast.LENGTH_SHORT).show() }) {
+                    Icon(Icons.Filled.Build, contentDescription = "Other Tools", tint = MaterialTheme.colorScheme.primary)
+                }
+
+                // RIGHT SIDE: Add Image next to Save
+                Row {
+                    Button(
+                        onClick = { imagePickerLauncher.launch(arrayOf("image/*")) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        Icon(Icons.Filled.Add, "Add Image")
+                        Spacer(Modifier.width(4.dp))
+                        Text("Image")
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
                     Button(
                         onClick = {
                             val noteToSave = Note(id = currentNoteId, title = title, blocks = blocks.toMutableList())
-                            val jsonString = Gson().toJson(noteToSave)
-                            context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().putString(noteToSave.id, jsonString).apply()
+                            context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().putString(noteToSave.id, Gson().toJson(noteToSave)).apply()
 
                             title = ""
                             blocks.clear()
                             blocks.add(NoteBlock("TEXT", ""))
                             currentNoteId = UUID.randomUUID().toString()
-                            onNoteSaved() // Clear edit state
+                            onNoteSaved()
                             Toast.makeText(context, "Note Saved! Swipe Right to view.", Toast.LENGTH_SHORT).show()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
                         Icon(Icons.Filled.Check, "Save Note")
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (incomingNote != null) "Update Note" else "Save Note")
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (incomingNote != null) "Update" else "Save")
                     }
                 }
-            }
-        }
-
-        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-            Button(onClick = { imagePickerLauncher.launch(arrayOf("image/*")) }) {
-                Icon(Icons.Filled.Add, "Add Image")
-                Spacer(Modifier.width(8.dp))
-                Text("Add Image")
             }
         }
     }
 }
 
 // ==========================================
-// PAGE 2: SAVED NOTES SCREEN
+// PAGE 2: SAVED NOTES SCREEN (Fixed Top Bar)
 // ==========================================
 @Composable
-fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit, onNewNoteClick: () -> Unit) {
+fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit, onNewNoteClick: () -> Unit, onOpenMenu: () -> Unit) {
     val context = LocalContext.current
     val sharedPreferences = context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE)
     var savedNotes by remember { mutableStateOf<List<Note>>(emptyList()) }
@@ -342,35 +364,53 @@ fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit, onNewNoteCli
     Scaffold(
         floatingActionButton = { FloatingActionButton(onClick = onNewNoteClick, containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Filled.Add, "Create New Note") } }
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).background(Color(0xFFE3F2FD)).padding(16.dp).padding(top = 24.dp)) {
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Person, "Profile", modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Hi Sudhakar", style = MaterialTheme.typography.titleMedium)
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).background(Color(0xFFE3F2FD)).padding(top = 24.dp)) {
+
+            // --- THE FIXED HEADER (Like WhatsApp) ---
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFFE3F2FD),
+                shadowElevation = 2.dp // Gives a tiny shadow so you know it's fixed
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Click the profile menu to open Drawer
+                            IconButton(onClick = onOpenMenu) {
+                                Icon(Icons.Filled.Menu, "Menu", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Hi Sudhakar", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("🔍 Search notes...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, focusedContainerColor = Color.White)
+                    )
                 }
             }
 
-            OutlinedTextField(value = searchQuery, onValueChange = { searchQuery = it }, label = { Text("🔍 Search notes...") }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, focusedContainerColor = Color.White))
-            Spacer(modifier = Modifier.height(16.dp))
-
+            // --- THE SCROLLABLE LIST ---
             val filteredNotes = savedNotes.filter { note -> note.title.contains(searchQuery, ignoreCase = true) || note.blocks.any { it.type == "TEXT" && it.content.contains(searchQuery, ignoreCase = true) } }
 
             if (filteredNotes.isEmpty()) {
                 Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No saved notes found.", color = Color.Gray) }
             } else {
-                LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-
+                LazyColumn(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(16.dp) // Pads the scrolling list
+                ) {
                     items(filteredNotes) { note ->
                         val previewText = note.blocks.firstOrNull { it.type == "TEXT" && it.content.isNotBlank() }?.content ?: "No text preview..."
                         val dateString = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()).format(Date(note.timestamp))
 
-                        // --- THE CARDS ARE NOW CLICKABLE! ---
                         Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 6.dp)
-                                .clickable { onNoteClick(note) }, // Triggers the View Screen
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onNoteClick(note) },
                             colors = CardDefaults.cardColors(containerColor = Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
@@ -380,12 +420,7 @@ fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit, onNewNoteCli
                                     Text(dateString, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                                 }
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = "v2.1.0 • Designed by Sudhakar",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color.LightGray,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
+                                Text(previewText, style = MaterialTheme.typography.bodyMedium, color = Color.DarkGray, maxLines = 2)
                             }
                         }
                     }
