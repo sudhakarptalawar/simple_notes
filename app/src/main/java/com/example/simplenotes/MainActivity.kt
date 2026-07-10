@@ -50,6 +50,7 @@ data class Note(
     var title: String = "",
     var timestamp: Long = System.currentTimeMillis(),
     var isPinned: Boolean = false,
+    var isDeleted: Boolean = false,
     var blocks: MutableList<NoteBlock> = mutableListOf(NoteBlock(type = "TEXT", content = ""))
 )
 // -------------------------
@@ -63,12 +64,11 @@ class MainActivity : ComponentActivity() {
             SimpleNotesTheme(darkTheme = false) {
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
-
-                // Fixed: Starts on Page 0 (The Editor/Write screen) exactly as it originally did
                 val pagerState = rememberPagerState(pageCount = { 2 }, initialPage = 0)
 
                 var viewingNote by remember { mutableStateOf<Note?>(null) }
                 var noteToEdit by remember { mutableStateOf<Note?>(null) }
+                var currentFolder by remember { mutableStateOf("ALL_NOTES") }
 
                 LaunchedEffect(noteToEdit) {
                     if (noteToEdit != null) pagerState.animateScrollToPage(0)
@@ -87,32 +87,51 @@ class MainActivity : ComponentActivity() {
                             }
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
 
-                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Star, "Starred") }, label = { Text("Starred") }, selected = false, onClick = { })
-                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Delete, "Bin") }, label = { Text("Bin") }, selected = false, onClick = { })
-                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Lock, "Locked Folder") }, label = { Text("Locked Folder") }, selected = false, onClick = { })
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Star, "Starred") }, label = { Text("Starred") }, selected = currentFolder == "STARRED", onClick = { Toast.makeText(this@MainActivity, "Coming Soon!", Toast.LENGTH_SHORT).show() })
+
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Filled.Delete, "Bin") },
+                                label = { Text("Bin") },
+                                selected = currentFolder == "BIN",
+                                onClick = {
+                                    currentFolder = "BIN"
+                                    scope.launch { drawerState.close() }
+                                }
+                            )
+
+                            NavigationDrawerItem(icon = { Icon(Icons.Filled.Lock, "Locked Folder") }, label = { Text("Locked Folder") }, selected = false, onClick = { Toast.makeText(this@MainActivity, "Coming Soon!", Toast.LENGTH_SHORT).show() })
                             NavigationDrawerItem(icon = { Icon(Icons.Filled.Cloud, "Cloud") }, label = { Text("Cloud") }, selected = false, onClick = { })
-                            NavigationDrawerItem(icon = { Icon(Icons.Filled.List, "All Notes") }, label = { Text("All Notes") }, selected = true, onClick = { scope.launch { drawerState.close() } })
+
+                            NavigationDrawerItem(
+                                icon = { Icon(Icons.Filled.List, "All Notes") },
+                                label = { Text("All Notes") },
+                                selected = currentFolder == "ALL_NOTES",
+                                onClick = {
+                                    currentFolder = "ALL_NOTES"
+                                    scope.launch { drawerState.close(); pagerState.animateScrollToPage(1) }
+                                }
+                            )
+
                             NavigationDrawerItem(icon = { Icon(Icons.Filled.Info, "Help") }, label = { Text("Help and feedback") }, selected = false, onClick = { })
 
                             Spacer(modifier = Modifier.weight(1f))
                             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                            Text("v2.4.1 • Designed by Sudhakar", style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(16.dp))
+                            Text("v2.5.1 • Designed by Sudhakar", style = MaterialTheme.typography.labelMedium, color = Color.Gray, modifier = Modifier.padding(16.dp))
                         }
                     }
                 ) {
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         bottomBar = {
-                            if (viewingNote == null) {
+                            // NEW: Only show the bottom bar if we are in ALL_NOTES!
+                            if (viewingNote == null && currentFolder == "ALL_NOTES") {
                                 NavigationBar(containerColor = Color.White, tonalElevation = 8.dp) {
-                                    // FIXED ORDER: Left button is Page 0 (Write)
                                     NavigationBarItem(
                                         icon = { Icon(Icons.Filled.Create, "Write") },
                                         label = { Text("Write") },
                                         selected = pagerState.currentPage == 0,
                                         onClick = { scope.launch { pagerState.animateScrollToPage(0) } }
                                     )
-                                    // FIXED ORDER: Right button is Page 1 (Notes)
                                     NavigationBarItem(
                                         icon = { Icon(Icons.Filled.List, "Notes") },
                                         label = { Text("Notes") },
@@ -123,13 +142,9 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         floatingActionButton = {
-                            // "Compose" FAB only shows up when you are looking at your Notes list (Page 1)
-                            if (pagerState.currentPage == 1 && viewingNote == null) {
+                            if (pagerState.currentPage == 1 && viewingNote == null && currentFolder == "ALL_NOTES") {
                                 ExtendedFloatingActionButton(
-                                    onClick = {
-                                        noteToEdit = null
-                                        scope.launch { pagerState.animateScrollToPage(0) }
-                                    },
+                                    onClick = { noteToEdit = null; scope.launch { pagerState.animateScrollToPage(0) } },
                                     icon = { Icon(Icons.Filled.Create, "Compose") },
                                     text = { Text("Compose") },
                                     containerColor = Color(0xFFFFE0B2),
@@ -145,11 +160,7 @@ class MainActivity : ComponentActivity() {
                                     note = viewingNote!!,
                                     onBack = { viewingNote = null },
                                     onEdit = { noteToEdit = viewingNote; viewingNote = null },
-                                    onDelete = { note ->
-                                        getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().remove(note.id).apply()
-                                        Toast.makeText(this@MainActivity, "Note Deleted", Toast.LENGTH_SHORT).show()
-                                        viewingNote = null
-                                    }
+                                    onActionComplete = { viewingNote = null }
                                 )
                             } else {
                                 Column(modifier = Modifier.fillMaxSize()) {
@@ -163,29 +174,42 @@ class MainActivity : ComponentActivity() {
                                                 Icon(Icons.Filled.Menu, "Menu", modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
                                             }
                                             Spacer(modifier = Modifier.width(8.dp))
-                                            Text(if (noteToEdit != null) "Editing Note..." else "Hi Sudhakar", style = MaterialTheme.typography.titleMedium)
+                                            Text(
+                                                text = if (noteToEdit != null) "Editing Note..."
+                                                else if (currentFolder == "BIN") "Bin"
+                                                else "Hi Sudhakar",
+                                                style = MaterialTheme.typography.titleMedium
+                                            )
                                         }
-                                        IconButton(onClick = { /* Settings */ }) {
-                                            Icon(Icons.Filled.Settings, "Settings", tint = Color.Gray)
-                                        }
+                                        IconButton(onClick = { /* Settings */ }) { Icon(Icons.Filled.Settings, "Settings", tint = Color.Gray) }
                                     }
 
-                                    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-                                        when (page) {
-                                            // Page 0: The Editor (Write)
-                                            0 -> CreateNoteScreen(
-                                                incomingNote = noteToEdit,
-                                                onNoteSaved = {
-                                                    noteToEdit = null
-                                                    scope.launch { pagerState.animateScrollToPage(1) }
-                                                }
-                                            )
-                                            // Page 1: The Saved Notes List (Notes)
-                                            1 -> SavedNotesScreen(
-                                                currentPage = pagerState.currentPage,
-                                                onNoteClick = { clickedNote -> viewingNote = clickedNote }
-                                            )
+                                    // NEW: If we are in the Bin, completely disable the Swiping Pager
+                                    // and ONLY show the SavedNotesScreen!
+                                    if (currentFolder == "ALL_NOTES") {
+                                        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+                                            when (page) {
+                                                0 -> CreateNoteScreen(
+                                                    incomingNote = noteToEdit,
+                                                    onNoteSaved = {
+                                                        noteToEdit = null
+                                                        scope.launch { pagerState.animateScrollToPage(1) }
+                                                    }
+                                                )
+                                                1 -> SavedNotesScreen(
+                                                    currentPage = pagerState.currentPage,
+                                                    currentFolder = currentFolder,
+                                                    onNoteClick = { clickedNote -> viewingNote = clickedNote }
+                                                )
+                                            }
                                         }
+                                    } else {
+                                        // Lock the view to just the list when in Bin or other folders
+                                        SavedNotesScreen(
+                                            currentPage = 1,
+                                            currentFolder = currentFolder,
+                                            onNoteClick = { clickedNote -> viewingNote = clickedNote }
+                                        )
                                     }
                                 }
                             }
@@ -198,7 +222,7 @@ class MainActivity : ComponentActivity() {
 }
 
 // ==========================================
-// PAGE 0: CREATE / EDIT SCREEN (Write)
+// PAGE 0: CREATE / EDIT SCREEN
 // ==========================================
 @Composable
 fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
@@ -206,13 +230,16 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
     var currentNoteId by remember { mutableStateOf(UUID.randomUUID().toString()) }
     var title by remember { mutableStateOf("") }
     val blocks = remember { mutableStateListOf<NoteBlock>(NoteBlock("TEXT", "")) }
+    var isDeletedFlag by remember { mutableStateOf(false) }
 
     LaunchedEffect(incomingNote) {
         if (incomingNote != null) {
-            currentNoteId = incomingNote.id; title = incomingNote.title; blocks.clear()
+            currentNoteId = incomingNote.id; title = incomingNote.title; isDeletedFlag = incomingNote.isDeleted
+            blocks.clear()
             incomingNote.blocks.forEach { blocks.add(NoteBlock(it.type, it.content)) }
         } else {
-            currentNoteId = UUID.randomUUID().toString(); title = ""; blocks.clear(); blocks.add(NoteBlock("TEXT", ""))
+            currentNoteId = UUID.randomUUID().toString(); title = ""; isDeletedFlag = false
+            blocks.clear(); blocks.add(NoteBlock("TEXT", ""))
         }
     }
 
@@ -252,7 +279,7 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            val noteToSave = Note(id = currentNoteId, title = title, blocks = blocks.toMutableList())
+                            val noteToSave = Note(id = currentNoteId, title = title, isDeleted = isDeletedFlag, blocks = blocks.toMutableList())
                             context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().putString(noteToSave.id, Gson().toJson(noteToSave)).apply()
                             title = ""; blocks.clear(); blocks.add(NoteBlock("TEXT", "")); currentNoteId = UUID.randomUUID().toString()
                             onNoteSaved(); Toast.makeText(context, "Note Saved!", Toast.LENGTH_SHORT).show()
@@ -270,16 +297,16 @@ fun CreateNoteScreen(incomingNote: Note?, onNoteSaved: () -> Unit) {
 }
 
 // ==========================================
-// PAGE 1: SAVED NOTES SCREEN (Notes)
+// PAGE 1: SAVED NOTES SCREEN
 // ==========================================
 @Composable
-fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit) {
+fun SavedNotesScreen(currentPage: Int, currentFolder: String, onNoteClick: (Note) -> Unit) {
     val context = LocalContext.current
     val sharedPreferences = context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE)
     var savedNotes by remember { mutableStateOf<List<Note>>(emptyList()) }
     var searchQuery by remember { mutableStateOf("") }
 
-    LaunchedEffect(currentPage) {
+    LaunchedEffect(currentPage, currentFolder) {
         if (currentPage == 1) {
             val notesList = mutableListOf<Note>()
             val allEntries = sharedPreferences.all
@@ -303,10 +330,16 @@ fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit) {
                 colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, focusedContainerColor = Color.White)
             )
 
-            val filteredNotes = savedNotes.filter { note -> note.title.contains(searchQuery, ignoreCase = true) || note.blocks.any { it.type == "TEXT" && it.content.contains(searchQuery, ignoreCase = true) } }
+            val filteredNotes = savedNotes.filter { note ->
+                val matchesSearch = note.title.contains(searchQuery, ignoreCase = true) || note.blocks.any { it.type == "TEXT" && it.content.contains(searchQuery, ignoreCase = true) }
+                val matchesFolder = if (currentFolder == "BIN") note.isDeleted else !note.isDeleted
+                matchesSearch && matchesFolder
+            }
 
             if (filteredNotes.isEmpty()) {
-                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No saved notes found.", color = Color.Gray) }
+                Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text(if (currentFolder == "BIN") "Bin is empty." else "No saved notes found.", color = Color.Gray)
+                }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(filteredNotes) { note ->
@@ -315,7 +348,7 @@ fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit) {
 
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).clickable { onNoteClick(note) },
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            colors = CardDefaults.cardColors(containerColor = if (note.isDeleted) Color(0xFFFFEBEE) else Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
@@ -335,10 +368,10 @@ fun SavedNotesScreen(currentPage: Int, onNoteClick: (Note) -> Unit) {
 }
 
 // ==========================================
-// VIEW NOTE SCREEN (Reading Overlay)
+// VIEW NOTE SCREEN
 // ==========================================
 @Composable
-fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete: (Note) -> Unit) {
+fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onActionComplete: () -> Unit) {
     val context = LocalContext.current
     var showMenu by remember { mutableStateOf(false) }
 
@@ -353,13 +386,36 @@ fun ViewNoteScreen(note: Note, onBack: () -> Unit, onEdit: () -> Unit, onDelete:
             Box {
                 IconButton(onClick = { showMenu = true }) { Icon(Icons.Filled.MoreVert, "Options") }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenu = false; onEdit() })
-                    DropdownMenuItem(text = { Text("Share") }, onClick = {
-                        showMenu = false
-                        val textToShare = note.blocks.filter { it.type == "TEXT" }.joinToString("\n\n") { it.content }
-                        context.startActivity(Intent.createChooser(Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n$textToShare"); type = "text/plain" }, "Share note via..."))
-                    })
-                    DropdownMenuItem(text = { Text("Delete", color = Color.Red) }, onClick = { showMenu = false; onDelete(note) })
+
+                    if (note.isDeleted) {
+                        DropdownMenuItem(text = { Text("Restore Note", color = Color(0xFF4CAF50)) }, onClick = {
+                            showMenu = false
+                            note.isDeleted = false
+                            context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().putString(note.id, Gson().toJson(note)).apply()
+                            Toast.makeText(context, "Note Restored!", Toast.LENGTH_SHORT).show()
+                            onActionComplete()
+                        })
+                        DropdownMenuItem(text = { Text("Delete Forever", color = Color.Red) }, onClick = {
+                            showMenu = false
+                            context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().remove(note.id).apply()
+                            Toast.makeText(context, "Permanently Deleted", Toast.LENGTH_SHORT).show()
+                            onActionComplete()
+                        })
+                    } else {
+                        DropdownMenuItem(text = { Text("Edit") }, onClick = { showMenu = false; onEdit() })
+                        DropdownMenuItem(text = { Text("Share") }, onClick = {
+                            showMenu = false
+                            val textToShare = note.blocks.filter { it.type == "TEXT" }.joinToString("\n\n") { it.content }
+                            context.startActivity(Intent.createChooser(Intent().apply { action = Intent.ACTION_SEND; putExtra(Intent.EXTRA_TEXT, "${note.title}\n\n$textToShare"); type = "text/plain" }, "Share note via..."))
+                        })
+                        DropdownMenuItem(text = { Text("Move to Bin", color = Color.Red) }, onClick = {
+                            showMenu = false
+                            note.isDeleted = true
+                            context.getSharedPreferences("NotesVault", Context.MODE_PRIVATE).edit().putString(note.id, Gson().toJson(note)).apply()
+                            Toast.makeText(context, "Moved to Bin", Toast.LENGTH_SHORT).show()
+                            onActionComplete()
+                        })
+                    }
                 }
             }
         }
